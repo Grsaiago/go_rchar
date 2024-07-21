@@ -1,0 +1,75 @@
+services:
+  db:
+    container_name: database
+    image: "postgres:latest"
+    env_file:
+      - ./.env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:?Must specify POSTGRES_DB env}
+      - POSTGRES_USER=${POSTGRES_USER:?Must specify POSTGRES_USER env}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Must specify POSTGRES_PASSWORD env}
+    ports:
+      - "5432:5432"
+    expose:
+      - 5432
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1m30s
+      timeout: 30s
+      retries: 3
+      start_period: 20s
+    volumes:
+      - ./dev/services/postgres/init_scripts:/docker-entrypoint-initdb.d/:ro
+      - db_data:/var/lib/postgresql/data:rw
+  redis:
+    container_name: redis
+    image: "redis:latest"
+    env_file:
+      - ./.env
+    ports:
+      - "6379:6379"
+    expose:
+      - 6379
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli", "--raw", "ping", "grep PONG" ]
+      interval: 1m30s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - db
+  backend:
+    container_name: backend
+    build: ./dev/services/app/
+    env_file:
+      - ./.env
+    ports:
+      - "9090:9090"
+    expose:
+      - 9090
+    networks:
+      - internal
+    healthcheck:
+      test: [ "CMD-SHELL", "curl", "127.0.0.1:9090" ]
+      interval: 1m
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - db
+      - redis
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src/*
+          target: /app/src
+        - action: rebuild
+          path: package.json
+
+networks:
+  internal: {}
+
+volumes:
+  db_data: {}
